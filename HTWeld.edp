@@ -1,0 +1,81 @@
+//HTWeld.edp 
+//Simulation using FreeFEM of the thermal response of a live pipe which has hot-tap welding done on it 
+//
+// Parameters
+real T=10; //total time
+real dt=0.1; //time increment
+real Lwall=15, Lsleeve=10, tsleeve=0.188, twall=0.188, tgap=0.02; //pipe and sleeve parameters
+real Weldside=0.208, Weldhyp=0.294; //weld area
+real k=0.00074, cP=0.119, rho=0.284; //thermal properties
+real hP=0.0000926, TP=325, hA=0.0000174, TA=70; //convection parameters
+real rtest=0.3, ztest=9.9; //coordinates to plot the temperature data
+int  nx=10, ny=100; //mesh resolution
+//
+func mu = k/(cP*rho); //thermal diffusivity
+func alphaP = hP/(cP*rho); //process convection coefficient
+func alphaA = hA/(cP*rho); //ambient convection coefficient
+//
+// Domain
+// Labels: 1-insulated; 2-source; 3-ambient; 4-process
+border Gamma1(t=0,1) {x=0.188*t; y=0; label=1;}
+border Gamma2(t=0,1) {x=0.188; y=10*t; label=1;}
+border Gamma3(t=0,1) {x=0.188+(0.02*t); y=10; label=1;}
+border Gamma4(t=1,0) {x=0.208; y=10*t; label=1;}
+border Gamma5(t=0,1) {x=0.208+(0.188*t); y=0; label=1;}
+border Gamma6(t=0,1) {x=0.396; y=10*t; label=3;}
+border Gamma7(t=1,0) {x=0.188+(0.208*t); y=10.208-(0.208*t); label=3;}
+border Gamma8(t=0,1) {x=0.188; y=(4.792*t)+10.208; label=3;}
+border Gamma9(t=1,0) {x=0.188*t; y=15; label=1;}
+border Gamma10(t=1,0) {x=0; y=15*t; label=4;}
+//
+// Plotting Geometry
+plot(Gamma1(nx) + Gamma2(2*ny) + Gamma3(0.5*nx) + Gamma4(2*ny) + Gamma5(nx) + Gamma6(2*ny) + Gamma7(nx) + Gamma8(ny) + Gamma9(nx) + Gamma10(3.5*ny));
+//
+// Mesh
+mesh Th = buildmesh(Gamma1(nx) + Gamma2(2*ny) + Gamma3(0.5*nx) + Gamma4(2*ny) + Gamma5(nx) + Gamma6(2*ny) + Gamma7(nx) + Gamma8(ny) + Gamma9(nx) + Gamma10(3.5*ny));
+savemesh(Th,"mesh_htweld_check.msh");
+//
+// Plotting Mesh
+plot(Th, wait=1, ps="HTWeldMesh.eps");
+//
+// Finite Element Space
+fespace Vh(Th, P1);
+Vh u, v, uold, f;
+//
+// Problem
+problem htweld(u, v)
+    = int2d(Th)((
+          u*v
+        + mu*dt*(
+              dx(u) * dx(v)
+            + dy(u) * dy(v)
+        ))*x
+    )
+    + int2d(Th)(
+          (-(uold*v)-(f*v*dt))*x
+    )
+    + int1d(Th, 4)(
+          alphaP*u*v*dt
+    )
+    - int1d(Th, 4)(
+          alphaP*TP*v*dt
+    )
+    + int1d(Th, 3)(
+          alphaA*u*v*dt
+    )
+    - int1d(Th, 3)(
+          alphaA*TA*v*dt
+    )
+    ;
+//
+// Output
+ofstream ff("htweld.dat"); //generates text file with temperature data over the total duration of time chosen at a specific point (rtest,ttest) defined under the heading "Parameters"
+//
+// Time Iterations
+for(real t = 0; t < T; t += dt){
+    uold = u; //equivalent to u^{n-1} = u^n
+    f = (x >= twall && y >= Lsleeve && x+y <= Lsleeve+tsleeve+tgap+twall) ? (2700/2)*(1+cos((t+5)*(pi/5))) : 0; // function for the heat source 
+    htweld; //here the hot tap weld problem is solved
+    ff << u(rtest,ztest) << endl; //temperature data at (rtest,ztest)
+    plot(u, bb=[[0.396, 8], [0, 12]], wait=false, grey=false, fill=true, value=true, ps="u"+string(t)+".eps"); //saving contour plots for temperature at interval dt 
+}
